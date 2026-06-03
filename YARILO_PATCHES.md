@@ -21,7 +21,7 @@ which upstream does not (yet) ship.
 | SCRAM-SHA-256-PLUS server | RFC 5802 + RFC 9266 channel binding | **landed** | Channel binding via TLS exporter (RFC 9266); caller supplies the exporter bytes from the underlying TLS conn. |
 | SCRAM-SHA-1 server | RFC 5802 | **landed** | Same state machine as SHA-256, digest swapped. Kept for legacy clients (older Thunderbird / Apple Mail fallback); new deployments should prefer SHA-256. |
 | SCRAM-SHA-1-PLUS server | RFC 5802 + channel binding | **landed** | RFC 9266 TLS-exporter channel binding (TLS 1.3+). |
-| XOAUTH2 server | Google XOAUTH2 dialect | planned | Likely to follow the LOGIN path — slated for removal upstream per #19. |
+| XOAUTH2 server | Google/Microsoft XOAUTH2 dialect | **landed** | Wire: `user=X\x01auth=Bearer T\x01\x01` — no GS2 envelope. Fast-fail (done=true on error, no dummy 0x01 round). Same OAuthBearerError JSON shape as OAUTHBEARER on failure. Reuses OAuthBearerOptions-compatible XOAuth2Options. |
 | CRAM-MD5 server | RFC 2195 (deprecated but legacy clients) | planned | |
 | DIGEST-MD5 server | RFC 2831 (deprecated) | planned | |
 

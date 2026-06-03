@@ -14,19 +14,16 @@ which upstream does not (yet) ship.
 
 ## What's added
 
-So far the `yarilo-patches` branch carries nothing beyond `master`.
-Server-side mechanisms land here as separate commits as Yarilo's
-AUTH-5 phase progresses:
-
-| Mech | RFC | Status |
-|:---|:---|:---|
-| SCRAM-SHA-1 server | RFC 5802 | planned |
-| SCRAM-SHA-1-PLUS server | RFC 5802 + channel binding | planned |
-| SCRAM-SHA-256 server | RFC 7677 | planned |
-| SCRAM-SHA-256-PLUS server | RFC 7677 + channel binding | planned |
-| XOAUTH2 server | Google XOAUTH2 dialect | planned |
-| CRAM-MD5 server | RFC 2195 (deprecated but legacy clients) | planned |
-| DIGEST-MD5 server | RFC 2831 (deprecated) | planned |
+| Mech | RFC | Status | Notes |
+|:---|:---|:---|:---|
+| LOGIN server | [draft-murchison-sasl-login](https://tools.ietf.org/html/draft-murchison-sasl-login-00) | **landed** | Restored from upstream commit `b788ff2~1` after upstream removed it in [emersion/go-sasl#19](https://github.com/emersion/go-sasl/issues/19) as "legacy". Yarilo needs it for older Outlook / Android MUAs. |
+| SCRAM-SHA-1 server | RFC 5802 | planned | |
+| SCRAM-SHA-1-PLUS server | RFC 5802 + channel binding | planned | |
+| SCRAM-SHA-256 server | RFC 7677 | planned | |
+| SCRAM-SHA-256-PLUS server | RFC 7677 + channel binding | planned | |
+| XOAUTH2 server | Google XOAUTH2 dialect | planned | Likely to follow the LOGIN path — slated for removal upstream per #19. |
+| CRAM-MD5 server | RFC 2195 (deprecated but legacy clients) | planned | |
+| DIGEST-MD5 server | RFC 2831 (deprecated) | planned | |
 
 Upstream already provides server-side **PLAIN**, **ANONYMOUS**,
 **EXTERNAL**, **OAUTHBEARER** — those are used directly.

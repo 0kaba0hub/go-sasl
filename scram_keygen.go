@@ -21,6 +21,18 @@ const DefaultScramIterations = 600_000
 // override, but the default tooling clamps this floor.
 const MinScramIterations = 4096
 
+// DeriveScramSha256Credentials runs PBKDF2-HMAC-SHA-256 against
+// the supplied password + salt + iterations and returns the
+// matching ScramCredentials. Salt is preserved verbatim — useful
+// for re-derivation paths where the salt comes from a stored
+// verifier (PLAIN-against-{SCRAM-SHA-256} compare).
+//
+// For new-user provisioning use GenerateScramSha256Credentials,
+// which generates a fresh random salt.
+func DeriveScramSha256Credentials(password string, salt []byte, iterations int) *ScramCredentials {
+	return deriveScramCredentials(sha256.New, sha256.Size, password, salt, iterations)
+}
+
 // GenerateScramSha256Credentials derives a {SCRAM-SHA-256} verifier
 // from a plain password. Salt is freshly generated (16 random
 // bytes). The returned ScramCredentials is suitable for storage

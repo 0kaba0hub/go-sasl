@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1" //nolint:gosec // SCRAM-SHA-1 is a SASL wire mechanism, not a password hash; the HMAC construction is not broken by SHA-1 collision attacks.
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -16,6 +17,8 @@ import (
 
 // SCRAM mechanism names per RFC 5802 + RFC 7677.
 const (
+	ScramSha1       = "SCRAM-SHA-1"        // RFC 5802
+	ScramSha1Plus   = "SCRAM-SHA-1-PLUS"   // RFC 5802 §6 (channel binding)
 	ScramSha256     = "SCRAM-SHA-256"      // RFC 7677
 	ScramSha256Plus = "SCRAM-SHA-256-PLUS" // RFC 5802 §6 + RFC 7677 (channel binding)
 )
@@ -82,6 +85,32 @@ func NewScramSha256PlusServer(auth ScramCredentialsLookup, opts ScramServerOptio
 	return newScramServer(scramConfig{
 		mech:       ScramSha256Plus,
 		newHash:    sha256.New,
+		auth:       auth,
+		plus:       true,
+		cbExpected: opts.ChannelBindingData,
+	})
+}
+
+// NewScramSha1Server builds a SCRAM-SHA-1 server (no channel
+// binding). Kept for compatibility with older clients (legacy
+// Thunderbird, Apple Mail fallback); new deployments should
+// prefer SCRAM-SHA-256.
+func NewScramSha1Server(auth ScramCredentialsLookup) Server {
+	return newScramServer(scramConfig{
+		mech:    ScramSha1,
+		newHash: sha1.New,
+		auth:    auth,
+		plus:    false,
+	})
+}
+
+// NewScramSha1PlusServer is the channel-bound SHA-1 variant. The
+// same TLS-1.3+ exporter requirement applies as for the SHA-256
+// PLUS mechanism.
+func NewScramSha1PlusServer(auth ScramCredentialsLookup, opts ScramServerOptions) Server {
+	return newScramServer(scramConfig{
+		mech:       ScramSha1Plus,
+		newHash:    sha1.New,
 		auth:       auth,
 		plus:       true,
 		cbExpected: opts.ChannelBindingData,

@@ -2,6 +2,7 @@ package sasl
 
 import (
 	"crypto/rand"
+	"crypto/sha1" //nolint:gosec // SCRAM-SHA-1 verifier derivation; HMAC-SHA-1/PBKDF2-SHA-1 remain sound for this construction.
 	"crypto/sha256"
 	"errors"
 	"hash"
@@ -42,6 +43,29 @@ func DeriveScramSha256Credentials(password string, salt []byte, iterations int) 
 // below MinScramIterations is clamped up so a misconfigured
 // caller never lands weak verifiers in the database.
 func GenerateScramSha256Credentials(password string, iterations int) (*ScramCredentials, error) {
+	return generateScramCredentials(sha256.New, sha256.Size, password, iterations)
+}
+
+// DeriveScramSha1Credentials runs PBKDF2-HMAC-SHA-1 against the
+// supplied password + salt + iterations and returns the matching
+// ScramCredentials. Used for re-derive paths (PLAIN check against
+// {SCRAM-SHA-1}).
+func DeriveScramSha1Credentials(password string, salt []byte, iterations int) *ScramCredentials {
+	return deriveScramCredentials(sha1.New, sha1.Size, password, salt, iterations)
+}
+
+// GenerateScramSha1Credentials derives a {SCRAM-SHA-1} verifier
+// from a plain password. Same clamping rules as the SHA-256
+// variant. Provided for clients that only speak SCRAM-SHA-1
+// (legacy Thunderbird, Apple Mail fallback). New deployments
+// should prefer SHA-256.
+func GenerateScramSha1Credentials(password string, iterations int) (*ScramCredentials, error) {
+	return generateScramCredentials(sha1.New, sha1.Size, password, iterations)
+}
+
+// generateScramCredentials is the shared salt-generation +
+// clamp + derive path used by every Generate* factory.
+func generateScramCredentials(newHash func() hash.Hash, hashSize int, password string, iterations int) (*ScramCredentials, error) {
 	if password == "" {
 		return nil, errors.New("sasl/scram: empty password")
 	}
@@ -55,7 +79,7 @@ func GenerateScramSha256Credentials(password string, iterations int) (*ScramCred
 	if _, err := rand.Read(salt); err != nil {
 		return nil, err
 	}
-	return deriveScramCredentials(sha256.New, sha256.Size, password, salt, iterations), nil
+	return deriveScramCredentials(newHash, hashSize, password, salt, iterations), nil
 }
 
 // deriveScramCredentials runs the full SCRAM key derivation given

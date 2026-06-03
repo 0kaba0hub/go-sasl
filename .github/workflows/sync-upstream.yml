@@ -1,0 +1,154 @@
+name: Sync upstream emersion/go-sasl
+
+# Keeps this fork in step with emersion/go-sasl:
+#   1. Fast-forwards `master` (clean mirror) to upstream's `master` tip daily.
+#   2. Rebases `yarilo-patches` (= master + Yarilo server-side mechanisms
+#      + this workflow) onto the new `master`. On clean rebase:
+#      force-push with lease. On conflict: open an issue tagged
+#      `upstream-conflict` so we notice.
+#
+# Triggered nightly (06:00 UTC) and on-demand via workflow_dispatch.
+# All ops run inside this fork; no upstream write access needed.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  mirror-master:
+    name: Fast-forward master from upstream
+    runs-on: ubuntu-latest
+    outputs:
+      advanced: ${{ steps.advance.outputs.advanced }}
+      old_sha: ${{ steps.advance.outputs.old_sha }}
+      new_sha: ${{ steps.advance.outputs.new_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'yarilo-sync-bot'
+          git config user.email 'yarilo-sync-bot@users.noreply.github.com'
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/emersion/go-sasl.git
+          git fetch upstream master --tags
+
+      - name: Detect divergence and advance master
+        id: advance
+        run: |
+          OLD=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/master)
+          echo "old_sha=$OLD" >> "$GITHUB_OUTPUT"
+          echo "new_sha=$UPSTREAM" >> "$GITHUB_OUTPUT"
+          if [ "$OLD" = "$UPSTREAM" ]; then
+            echo "advanced=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::master already at upstream tip ($OLD)"
+            exit 0
+          fi
+          # Refuse if our master has commits upstream does not (mirror invariant).
+          if ! git merge-base --is-ancestor HEAD upstream/master; then
+            echo "::error::master mirror has diverged from upstream/master — manual fix required"
+            exit 1
+          fi
+          AHEAD=$(git rev-list --count "$OLD..$UPSTREAM")
+          echo "::notice::Fast-forwarding master by $AHEAD commit(s): $OLD -> $UPSTREAM"
+          git merge --ff-only upstream/master
+          git push origin master
+          echo "advanced=true" >> "$GITHUB_OUTPUT"
+
+  rebase-patches:
+    name: Rebase yarilo-patches onto master
+    needs: mirror-master
+    if: needs.mirror-master.outputs.advanced == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: yarilo-patches
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'yarilo-sync-bot'
+          git config user.email 'yarilo-sync-bot@users.noreply.github.com'
+
+      - name: Fetch updated master
+        run: git fetch origin master
+
+      - name: Attempt rebase
+        id: rebase
+        run: |
+          if git merge-base --is-ancestor origin/master HEAD; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::yarilo-patches already on top of master — no rebase needed"
+            exit 0
+          fi
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          if git -c rerere.enabled=true rebase origin/master; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            git rebase --abort || true
+          fi
+
+      - name: Push rebased branch
+        if: steps.rebase.outputs.needed == 'true' && steps.rebase.outputs.ok == 'true'
+        run: |
+          git push --force-with-lease origin yarilo-patches
+          echo "::notice::yarilo-patches rebased and force-pushed"
+
+      - name: Open conflict issue
+        if: steps.rebase.outputs.needed == 'true' && steps.rebase.outputs.ok == 'false'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const oldSha = '${{ needs.mirror-master.outputs.old_sha }}';
+            const newSha = '${{ needs.mirror-master.outputs.new_sha }}';
+            const title = `upstream-sync: yarilo-patches rebase conflict (master ${newSha.slice(0,7)})`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream-conflict',
+            });
+            if (existing.data.some(i => i.title.startsWith('upstream-sync: yarilo-patches rebase conflict'))) {
+              core.info('Conflict issue already open — skipping');
+              return;
+            }
+            const compareUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/compare/${oldSha}...${newSha}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['upstream-conflict', 'automation'],
+              body: [
+                '**Automated rebase failed.**',
+                '',
+                `\`master\` advanced from \`${oldSha}\` to \`${newSha}\` ([compare](${compareUrl})), but rebasing \`yarilo-patches\` on top produced conflicts.`,
+                '',
+                'Manual steps:',
+                '```',
+                'git fetch origin',
+                'git checkout yarilo-patches',
+                'git rebase origin/master',
+                '# resolve conflicts, then:',
+                'git push --force-with-lease origin yarilo-patches',
+                '```',
+                '',
+                'After resolving, remember to bump the yarilo `go.mod` replace pseudo-version to the new tip.',
+              ].join('\n'),
+            });

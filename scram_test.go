@@ -395,3 +395,30 @@ func TestScramSha256_DoubleNextErrors(t *testing.T) {
 		// silence unused error-import warning in some builds
 	}
 }
+
+// An unknown user must be answered with a salt that depends on the name and
+// nothing else: one that changes per attempt says the account is not there,
+// before any password has been sent.
+func TestFabricatedSaltIsStablePerName(t *testing.T) {
+	saltOf := func(user string) string {
+		srv := sasl.NewScramSha256Server(func(string) (*sasl.ScramCredentials, error) { return nil, nil })
+		challenge, _, err := srv.Next([]byte("n,,n=" + user + ",r=rOprNGfwEbeRWgbNEkqO"))
+		if err != nil {
+			t.Fatalf("client-first for %q: %v", user, err)
+		}
+		for _, attr := range strings.Split(string(challenge), ",") {
+			if strings.HasPrefix(attr, "s=") {
+				return attr[2:]
+			}
+		}
+		t.Fatalf("no salt in %q", challenge)
+		return ""
+	}
+	first, second := saltOf("nobody"), saltOf("nobody")
+	if first != second {
+		t.Errorf("one name answered two salts, %q and %q", first, second)
+	}
+	if other := saltOf("nobody-else"); other == first {
+		t.Errorf("two names answered one salt %q", other)
+	}
+}

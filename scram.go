@@ -13,6 +13,7 @@ import (
 	"hash"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // SCRAM mechanism names per RFC 5802 + RFC 7677.
@@ -146,11 +147,11 @@ type scramServer struct {
 	cfg   scramConfig
 	state int
 
-	username       string
-	clientNonce    string
-	combinedNonce  string
+	username        string
+	clientNonce     string
+	combinedNonce   string
 	clientFirstBare []byte
-	serverFirst    []byte
+	serverFirst     []byte
 
 	creds *ScramCredentials
 	// fakeCreds carries fabricated salt+iter for the "unknown
@@ -233,7 +234,7 @@ func (s *scramServer) handleClientFirst(response []byte) ([]byte, bool, error) {
 		return nil, true, fmt.Errorf("sasl/scram: lookup: %w", lookupErr)
 	}
 	if creds == nil {
-		s.fakeCreds = fabricateScramCredentials(s.cfg.newHash())
+		s.fakeCreds = fabricateScramCredentials(s.cfg.newHash(), s.username)
 		creds = s.fakeCreds
 	}
 	s.creds = creds
@@ -378,16 +379,33 @@ func (s *scramServer) verifyChannelBinding(cbInput []byte) error {
 // unknown-user path so the protocol still completes through
 // client-final with a uniform timing profile; ClientProof
 // verification will fail because no client can derive zeroes.
-func fabricateScramCredentials(h hash.Hash) *ScramCredentials {
-	salt := make([]byte, 16)
-	_, _ = rand.Read(salt)
+func fabricateScramCredentials(h hash.Hash, username string) *ScramCredentials {
 	digest := h.Size()
 	return &ScramCredentials{
 		Iterations: 4096,
-		Salt:       salt,
+		Salt:       fakeSalt(username),
 		StoredKey:  make([]byte, digest),
 		ServerKey:  make([]byte, digest),
 	}
+}
+
+// fakeSaltSecret keys the fabricated salts. Per process and never exposed: the
+// salt must be stable for one name and unguessable for the prober.
+var (
+	fakeSaltOnce   sync.Once
+	fakeSaltSecret []byte
+)
+
+// fakeSalt is the salt an unknown user is answered with. Derived from the
+// name, because a salt that changes per attempt tells a prober the account is
+// not there -- before any password is sent.
+func fakeSalt(username string) []byte {
+	fakeSaltOnce.Do(func() {
+		fakeSaltSecret = make([]byte, 32)
+		_, _ = rand.Read(fakeSaltSecret)
+	})
+	sum := hmacSum(sha256.New, fakeSaltSecret, []byte(username))
+	return sum[:16]
 }
 
 // --- helpers --------------------------------------------------

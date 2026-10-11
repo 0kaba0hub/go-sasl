@@ -37,6 +37,9 @@ jobs:
         with:
           ref: master
           fetch-depth: 0
+          # Pushes go through the deploy key: the branch rulesets let only it
+          # past, and a personal repository cannot exempt GitHub Actions.
+          ssh-key: ${{ secrets.SYNC_DEPLOY_KEY }}
 
       - name: Configure git identity
         run: |
@@ -81,6 +84,9 @@ jobs:
         with:
           ref: yarilo-patches
           fetch-depth: 0
+          # Pushes go through the deploy key: the branch rulesets let only it
+          # past, and a personal repository cannot exempt GitHub Actions.
+          ssh-key: ${{ secrets.SYNC_DEPLOY_KEY }}
 
       - name: Configure git identity
         run: |
